@@ -1,3 +1,9 @@
+#输入数据要求
+#slide特征文件   .h5/.pt   每个特征文件包含了该slide的patch特征向量
+#注释csv文件    至少要包含   slide_id：特征文件的基名（如TCGA-XX-XXXX-01A-01-TS1）  
+#label：分类标签（如0/1、Normal/Tumor等）  case_id：病例编号（用于按病人分组）   其他字段可选：来源site、性别、年龄等
+
+
 from __future__ import print_function, division
 import os
 import torch
