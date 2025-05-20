@@ -1,3 +1,11 @@
+#输入数据要求 
+#.pt或.h5格式特征文件
+#组学特征  每一行为不同的case_id    每一列对应RNA-seq、CNV、Mutation之类的基因表达矩阵
+#生存信息   OS_time：生存时长  censorship：是否发生事件（如0=有事件/已死亡，1=无事件/随访中/删失
+#可把所有信息整合进一个大的csv文件！！推荐
+
+
+
 from __future__ import print_function, division
 import math
 import os
