@@ -27,9 +27,10 @@ from torch.utils.data import DataLoader, sampler
 
 def main(args):
 	#### Create Results Directory
+	# 创建结果目录
 	if not os.path.isdir(args.results_dir):
 		os.mkdir(args.results_dir)
-
+        #确定交叉验证起止轮次
 	if args.k_start == -1:
 		start = 0
 	else:
@@ -38,20 +39,25 @@ def main(args):
 		end = args.k
 	else:
 		end = args.k_end
-
+        #准备记录变量
 	latest_val_cindex = []
 	folds = np.arange(start, end)
 
 	### Start 5-Fold CV Evaluation.
+	#5-Fold CV主循环
 	for i in folds:
+		#记录开始时间,方便后续计算每fold耗时
 		start = timer()
+		#设置随机种子
 		seed_torch(args.seed)
+		#检查当前结果是否已存在，是否覆盖,如果当前fold结果已经算过，且没有要求强制重算，就直接跳过，节省时间
 		results_pkl_path = os.path.join(args.results_dir, 'split_latest_val_{}_results.pkl'.format(i))
 		if os.path.isfile(results_pkl_path) and (not args.overwrite):
 			print("Skipping Split %d" % i)
 			continue
 
 		### Gets the Train + Val Dataset Loader.
+		#加载训练/验证集
 		train_dataset, val_dataset = dataset.return_splits(from_id=False, 
 				csv_path='{}/splits_{}.csv'.format(args.split_dir, i))
 		train_dataset.set_split_id(split_id=i)
@@ -62,6 +68,7 @@ def main(args):
 		datasets = (train_dataset, val_dataset)
 		
 		### Specify the input dimension size if using genomic features.
+		#设置输入特征维数
 		if 'omic' in args.mode or args.mode == 'cluster' or args.mode == 'graph' or args.mode == 'pyramid':
 			args.omic_input_dim = train_dataset.genomic_features.shape[1]
 			print("Genomic Dimension", args.omic_input_dim)
@@ -72,16 +79,19 @@ def main(args):
 			args.omic_input_dim = 0
 
 		### Run Train-Val on Survival Task.
+		#调用主训练函数，执行训练+验证
 		if args.task_type == 'survival':
 			val_latest, cindex_latest = train(datasets, i, args)
 			latest_val_cindex.append(cindex_latest)
 
 		### Write Results for Each Split to PKL
+		#保存当前fold的结果到pkl文件
 		save_pkl(results_pkl_path, val_latest)
 		end = timer()
 		print('Fold %d Time: %f seconds' % (i, end - start))
 
 	### Finish 5-Fold CV Evaluation.
+	#5折交叉验证结束，整合所有结果
 	if args.task_type == 'survival':
 		results_latest_df = pd.DataFrame({'folds': folds, 'val_cindex': latest_val_cindex})
 
@@ -93,8 +103,10 @@ def main(args):
 	results_latest_df.to_csv(os.path.join(args.results_dir, 'summary_latest.csv'))
 
 ### Training settings
+#使用该脚本的时候，直接在运行脚本的时候python main.py --data_root_dir /data/tcga这样子就能直接指定数据存放目录
 parser = argparse.ArgumentParser(description='Configurations for Survival Analysis on TCGA Data.')
 ### Checkpoint + Misc. Pathing Parameters
+#病理图片特征部分
 parser.add_argument('--data_root_dir',   type=str, default='path/to/data_root_dir', help='Data directory to WSI features (extracted via CLAM')
 parser.add_argument('--seed', 			 type=int, default=1, help='Random seed for reproducible experiment (default: 1)')
 parser.add_argument('--k', 			     type=int, default=5, help='Number of folds (default: 5)')
@@ -107,15 +119,25 @@ parser.add_argument('--log_data',        action='store_true', default=True, help
 parser.add_argument('--overwrite',     	 action='store_true', default=False, help='Whether or not to overwrite experiments (if already ran)')
 
 ### Model Parameters.
+#模型相关的参数设置
+#控制主流程要用哪种核心模型
 parser.add_argument('--model_type',      type=str, default='mcat', help='Type of model (Default: mcat)')
+#决定本次训练用哪些数据源、怎么拼接/融合数据
 parser.add_argument('--mode',            type=str, choices=['omic', 'path', 'pathomic', 'pathomic_fast', 'cluster', 'coattn'], default='coattn', help='Specifies which modalities to use / collate function in dataloader.')
+#控制不同模态的特征是如何合并的
 parser.add_argument('--fusion',          type=str, choices=['None', 'concat', 'bilinear'], default='None', help='Type of fusion. (Default: concat).')
+#通常指用特定的生物marker gene的表达向量作为输入，而不是全量组学特征
 parser.add_argument('--apply_sig',		 action='store_true', default=False, help='Use genomic features as signature embeddings.')
+#是否把组学特征直接当作表格变量
 parser.add_argument('--apply_sigfeats',  action='store_true', default=False, help='Use genomic features as tabular features.')
+#控制是否在网络中加dropout（p=0.25），防止过拟合
 parser.add_argument('--drop_out',        action='store_true', default=True, help='Enable dropout (p=0.25)')
+#控制WSI路径特征处理网络的宽度/深度（如small/big）
 parser.add_argument('--model_size_wsi',  type=str, default='small', help='Network size of AMIL model')
+#控制组学特征分支的全连接层规模（如small/big）
 parser.add_argument('--model_size_omic', type=str, default='small', help='Network size of SNN model')
 
+#输出类别数
 parser.add_argument('--n_classes', type=int, default=4)
 
 
