@@ -107,15 +107,24 @@ def main(args):
 parser = argparse.ArgumentParser(description='Configurations for Survival Analysis on TCGA Data.')
 ### Checkpoint + Misc. Pathing Parameters
 #病理图片特征部分
+#原始数据（如组学、病理图片等WSI特征）的存放目录
 parser.add_argument('--data_root_dir',   type=str, default='path/to/data_root_dir', help='Data directory to WSI features (extracted via CLAM')
+#随机种子，保证每次实验结果一致，可复现
 parser.add_argument('--seed', 			 type=int, default=1, help='Random seed for reproducible experiment (default: 1)')
+#k折交叉验证的折数，默认5
 parser.add_argument('--k', 			     type=int, default=5, help='Number of folds (default: 5)')
+#只训练部分fold时指定起始和终止的fold号
 parser.add_argument('--k_start',		 type=int, default=-1, help='Start fold (Default: -1, last fold)')
 parser.add_argument('--k_end',			 type=int, default=-1, help='End fold (Default: -1, first fold)')
+#输出结果文件保存路径
 parser.add_argument('--results_dir',     type=str, default='./results_new', help='Results directory (Default: ./results)')
+#指定用哪种分割方案（如5折/10折/自定义分组），其实就是用哪个split目录
 parser.add_argument('--which_splits',    type=str, default='5foldcv', help='Which splits folder to use in ./splits/ (Default: ./splits/5foldcv')
+#哪种癌症/任务名/子目录名，进一步细分split文件夹
 parser.add_argument('--split_dir',       type=str, default='tcga_blca', help='Which cancer type within ./splits/<which_splits> to use for training. Used synonymously for "task" (Default: tcga_blca_100)')
+#是否用tensorboard记录训练日志
 parser.add_argument('--log_data',        action='store_true', default=True, help='Log data using tensorboard')
+#如果已经有结果文件，是否覆盖旧实验
 parser.add_argument('--overwrite',     	 action='store_true', default=False, help='Whether or not to overwrite experiments (if already ran)')
 
 ### Model Parameters.
