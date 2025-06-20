@@ -174,29 +174,48 @@ parser.add_argument('--use_mlp', action='store_true', default=False)
 #优化器参数和损失函数相关的命令行参数
 #可选adam（自适应学习率，收敛快，推荐用于大部分深度模型）、sgd（传统随机梯度下降，适合大数据和线性模型）
 parser.add_argument('--opt',             type=str, choices = ['adam', 'sgd'], default='adam')
+#每次训练的样本批量大小,多实例学习（MIL）等任务由于每个样本“袋子”里的实例数量不同，经常用batch_size=1保证训练的灵活性（每次喂一个病人/切片/包）
 parser.add_argument('--batch_size',      type=int, default=1, help='Batch Size (Default: 1, due to varying bag sizes)')
+#梯度累积步数，用于“模拟大batch训练”，即实际每处理gc个batch再做一次梯度更新，适合显存小但想用大batch的情况
 parser.add_argument('--gc',              type=int, default=32, help='Gradient Accumulation Step.')
+#最大训练轮数，到达指定epoch后自动终止训练
 parser.add_argument('--max_epochs',      type=int, default=20, help='Maximum number of epochs to train (default: 20)')
+#学习率，控制每次参数更新的步长，是模型能否收敛、收敛快慢的关键参数。
 parser.add_argument('--lr',				 type=float, default=2e-4, help='Learning rate (default: 0.0001)')
+#包级（slide-level）损失函数类型，可选：svm: 支持向量机损失,ce: 交叉熵（多分类常用）,ce_surv: 生存分析任务用的交叉熵变体,nll_surv: 生存分析的负对数似然损失（更适合处理删失数据）
 parser.add_argument('--bag_loss',        type=str, choices=['svm', 'ce', 'ce_surv', 'nll_surv'], default='nll_surv', help='slide-level classification loss function (default: ce)')
+#训练集标签采样比例，用于半监督/弱监督/标签不全实验，1.0代表全部标签都用，0.5就是只随机用一半标签。
 parser.add_argument('--label_frac',      type=float, default=1.0, help='fraction of training labels (default: 1.0)')
+#L2正则化（权重衰减），用于防止过拟合，越大模型越保守。避免了模型对特定数据的过度依赖（即过拟合）
 parser.add_argument('--reg', 			 type=float, default=1e-5, help='L2-regularization weight decay (default: 1e-5)')
+#对“未删失患者”的损失加权系数（生存分析常用），调整模型对不同类型患者的关注度。
 parser.add_argument('--alpha_surv',      type=float, default=0.0, help='How much to weigh uncensored patients')
+#L1正则化的作用对象：'omic'：仅对组学分支加L1正则，'pathomic'：对融合层或多模态层加L1，'None'：不加
 parser.add_argument('--reg_type',        type=str, choices=['None', 'omic', 'pathomic'], default='None', help='Which network submodules to apply L1-Regularization (default: None)')
+#L1正则化系数，越大特征稀疏性越强，可用于特征选择。
 parser.add_argument('--lambda_reg',      type=float, default=1e-5, help='L1-Regularization Strength (Default 1e-4)')
+#启用带权重的采样，用于处理数据类别不平衡（如正负样本极不均衡时，按类别权重采样）。
 parser.add_argument('--weighted_sample', action='store_true', default=True, help='Enable weighted sampling')
+#启用Early Stopping，在验证集loss长时间不下降时提前停止训练，防止过拟合。
 parser.add_argument('--early_stopping',  action='store_true', default=False, help='Enable early stopping')
 
 ### CLAM-Specific Parameters
+#bag_weight=0.7**意味着模型将70%的关注放在袋子级别的预测上
 parser.add_argument('--bag_weight',      type=float, default=0.7, help='clam: weight coefficient for bag-level loss (default: 0.7)')
+#调试工具，如果设置了--testing，则args.testing会被设置为True，启用--testing模式通常意味着开启一些简化的训练设置如使用更小的数据集进行测试，简化模型结构，只运行部分训练周期
 parser.add_argument('--testing', 	 	 action='store_true', default=False, help='debugging tool')
 
+#解析命令行传入的所有参数，将它们存储在args对象中，之后可以通过args.xxx来访问这些参数
 args = parser.parse_args()
+#如果有可用的CUDA设备（即GPU），则将设备设置为GPU（cuda）,否则则回退到CPU（cpu）
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ### Creates Experiment Code from argparse + Folder Name to Save Results
+#根据传入的参数（比如split_dir、task等），将它们组合起来，生成一个标准的、具有描述性的实验代码，方便后续的实验管理和结果保存。
 args = get_custom_exp_code(args)
+#生存分析任务（survival），任务名称由split_dir（分割文件夹名）推断而来
 args.task = '_'.join(args.split_dir.split('_')[:2]) + '_survival'
+#打印出生成的实验名称
 print("Experiment Name:", args.exp_code)
 
 ### Sets Seed for reproducible experiments.
@@ -215,28 +234,28 @@ def seed_torch(seed=7):
 seed_torch(args.seed)
 
 encoding_size = 1024
-settings = {'num_splits': args.k, 
-			'k_start': args.k_start,
-			'k_end': args.k_end,
-			'task': args.task,
-			'max_epochs': args.max_epochs, 
-			'results_dir': args.results_dir, 
-			'lr': args.lr,
-			'experiment': args.exp_code,
-			'reg': args.reg,
-			'label_frac': args.label_frac,
-			'bag_loss': args.bag_loss,
-			#'bag_weight': args.bag_weight,
-			'seed': args.seed,
-			'model_type': args.model_type,
-			'model_size_wsi': args.model_size_wsi,
-			'model_size_omic': args.model_size_omic,
-			"use_drop_out": args.drop_out,
-			'weighted_sample': args.weighted_sample,
-			'gc': args.gc,
-			'opt': args.opt}
+settings = {'num_splits': args.k,     # 交叉验证的折数
+			'k_start': args.k_start,                  # 起始的折数（通常用于选择部分折）
+			'k_end': args.k_end,                      # 结束的折数
+			'task': args.task,                        # 任务类型（如生存分析、分类等）
+			'max_epochs': args.max_epochs,            # 最大训练轮数
+			'results_dir': args.results_dir,          # 结果保存目录
+			'lr': args.lr,                            # 学习率
+			'experiment': args.exp_code,              # 实验代码，用于唯一标识当前实验
+			'reg': args.reg,                          # L2正则化的权重衰减
+			'label_frac': args.label_frac,            # 训练集标签使用的比例
+			'bag_loss': args.bag_loss,                # Bag-level损失函数（如SVM、交叉熵等）
+			#'bag_weight': args.bag_weight,           # Bag-level损失权重（目前注释掉了）
+			'seed': args.seed,                        # 随机种子
+			'model_type': args.model_type,            # 模型类型（如SNN、AMIL等）
+			'model_size_wsi': args.model_size_wsi,    # WSI（病理图像）模型的大小
+			'model_size_omic': args.model_size_omic,  # 组学数据模型的大小
+			"use_drop_out": args.drop_out,            # 是否启用dropout
+			'weighted_sample': args.weighted_sample,  # 是否启用加权采样
+			'gc': args.gc,                            # 梯度累积步数
+			'opt': args.opt}                          # 优化器类型（如Adam、SGD等）
 print('\nLoad Dataset')
-
+#：根据args.task判断当前任务是否为生存分析任务。如果是生存分析任务，则加载相关数据集并进行配置
 if 'survival' in args.task:
 	study = '_'.join(args.task.split('_')[:2])
 	if study == 'tcga_kirc' or study == 'tcga_kirp':
@@ -247,7 +266,7 @@ if 'survival' in args.task:
 		combined_study = study
 	
 	study_dir = '%s_20x_features' % combined_study
-
+	#数据集加载：使用Generic_MIL_Survival_Dataset加载数据集，并根据配置的参数处理数据
 	dataset = Generic_MIL_Survival_Dataset(csv_path = './%s/%s_all_clean.csv.zip' % (args.dataset_path, study),
 										   mode = args.mode,
 										   apply_sig = args.apply_sig,
@@ -261,17 +280,19 @@ if 'survival' in args.task:
 										   ignore=[])
 else:
 	raise NotImplementedError
-
+#检查数据集是否是Generic_MIL_Survival_Dataset类型。如果是，它会将任务类型args.task_type设置为'survival'，表示当前任务是生存分析任务
 if isinstance(dataset, Generic_MIL_Survival_Dataset):
 	args.task_type = 'survival'
 else:
 	raise NotImplementedError
 
 ### Creates results_dir Directory.
+#创建存储实验结果的目录。它会检查指定的结果文件夹是否存在，如果不存在，则会创建该目录
 if not os.path.isdir(args.results_dir):
 	os.mkdir(args.results_dir)
 
 ### Appends to the results_dir path: 1) which splits were used for training (e.g. - 5foldcv), and then 2) the parameter code and 3) experiment code
+#根据指定的路径，动态创建一个更具体的实验结果文件夹，并检查该文件夹是否已经存在以避免覆盖已有的结果
 args.results_dir = os.path.join(args.results_dir, args.which_splits, args.param_code, str(args.exp_code) + '_s{}'.format(args.seed))
 if not os.path.isdir(args.results_dir):
 	os.makedirs(args.results_dir)
@@ -281,23 +302,34 @@ if ('summary_latest.csv' in os.listdir(args.results_dir)) and (not args.overwrit
 	sys.exit()
 
 ### Sets the absolute path of split_dir
+#设置了args.split_dir的绝对路径，并将其与当前目录中的splits文件夹结合起来
+#通过os.path.join()，路径会被动态拼接成像这样的完整路径：'./splits/5foldcv/tcga_kirc'
 args.split_dir = os.path.join('./splits', args.which_splits, args.split_dir)
 print("split_dir", args.split_dir)
+#os.path.isdir(args.split_dir)会检查args.split_dir是否存在且是一个目录
 assert os.path.isdir(args.split_dir)
+#将args.split_dir添加到settings字典中，确保实验设置中包含数据划分的目录路径
 settings.update({'split_dir': args.split_dir})
 
+#将当前实验的设置保存到一个文本文件中
 with open(args.results_dir + '/experiment_{}.txt'.format(args.exp_code), 'w') as f:
 	print(settings, file=f)
 f.close()
 
+#打印出所有的实验设置，这部分代码会遍历settings字典，并逐项打印出每个配置的键（key）和值（val），方便查看当前实验的具体设置
 print("################# Settings ###################")
 for key, val in settings.items():
 	print("{}:  {}".format(key, val))        
 
+#确保当该脚本作为主程序运行时，以下代码才会执行
 if __name__ == "__main__":
+	#记录程序开始的时间
 	start = timer()
+	#调用main函数开始运行实验，main(args)会接收命令行参数并开始执行实际的训练/评估任务
 	results = main(args)
+	#记录程序结束的时间
 	end = timer()
 	print("finished!")
 	print("end script")
+	#打印整个脚本的运行时间
 	print('Script Time: %f seconds' % (end - start))
