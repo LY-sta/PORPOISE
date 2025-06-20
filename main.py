@@ -151,14 +151,22 @@ parser.add_argument('--n_classes', type=int, default=4)
 
 
 ### PORPOISE
+#控制是否应用mutsig，mutsig通常用于突变签名分析
 parser.add_argument('--apply_mutsig', action='store_true', default=False)
+#控制是否在模型中使用病理图片（Pathology）相关的gate机制
 parser.add_argument('--gate_path', action='store_true', default=False)
+#控制是否在模型中使用组学数据（Omics）相关的gate机制
 parser.add_argument('--gate_omic', action='store_true', default=False)
+#控制模型中特定维度的缩放比例，用于调整输入或中间层的维度
 parser.add_argument('--scale_dim1', type=int, default=8)
 parser.add_argument('--scale_dim2', type=int, default=8)
+#控制是否跳过某些操作
 parser.add_argument('--skip', action='store_true', default=False)
+#控制输入层的dropout比例。dropout是深度学习中常用的防止过拟合的技术，通过随机丢弃神经网络中的部分节点来提高模型的泛化能力
 parser.add_argument('--dropinput', type=float, default=0.0)
+#指定病理图片输入特征的维度,这个参数是用来控制输入病理特征（如WSI特征提取后的向量）的维度大小,根据实际使用的病理图片特征的维度，调整这个参数
 parser.add_argument('--path_input_dim', type=int, default=1024)
+#控制是否使用**MLP（多层感知机）**作为网络的一部分
 parser.add_argument('--use_mlp', action='store_true', default=False)
 
 
