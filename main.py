@@ -171,6 +171,8 @@ parser.add_argument('--use_mlp', action='store_true', default=False)
 
 
 ### Optimizer Parameters + Survival Loss Function
+#优化器参数和损失函数相关的命令行参数
+#可选adam（自适应学习率，收敛快，推荐用于大部分深度模型）、sgd（传统随机梯度下降，适合大数据和线性模型）
 parser.add_argument('--opt',             type=str, choices = ['adam', 'sgd'], default='adam')
 parser.add_argument('--batch_size',      type=int, default=1, help='Batch Size (Default: 1, due to varying bag sizes)')
 parser.add_argument('--gc',              type=int, default=32, help='Gradient Accumulation Step.')
