@@ -69,6 +69,7 @@ def main(args):
 		
 		### Specify the input dimension size if using genomic features.
 		#设置输入特征维数
+		#判断是否使用gene信息
 		if 'omic' in args.mode or args.mode == 'cluster' or args.mode == 'graph' or args.mode == 'pyramid':
 			args.omic_input_dim = train_dataset.genomic_features.shape[1]
 			print("Genomic Dimension", args.omic_input_dim)
