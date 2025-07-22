@@ -265,7 +265,7 @@ if 'survival' in args.task:
 		combined_study = 'tcga_lung'
 	else:
 		combined_study = study
-	
+	#拼接出病理图片特征的目录文件
 	study_dir = '%s_20x_features' % combined_study
 	#数据集加载：使用Generic_MIL_Survival_Dataset加载数据集，并根据配置的参数处理数据
 	dataset = Generic_MIL_Survival_Dataset(csv_path = './%s/%s_all_clean.csv.zip' % (args.dataset_path, study),
