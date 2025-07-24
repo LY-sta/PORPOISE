@@ -1,7 +1,7 @@
 #输入数据要求 
 #.pt或.h5格式特征文件
 #组学特征  每一行为不同的case_id    每一列对应RNA-seq、CNV、Mutation之类的基因表达矩阵
-#生存信息   OS_time：生存时长  censorship：是否发生事件（如0=有事件/已死亡，1=无事件/随访中/删失
+#生存信息   OS_time：生存时长  censorship：是否发生事件（如0=未删失，1=删失
 #可把所有信息整合进一个大的csv文件！！推荐
 
 
@@ -47,37 +47,38 @@ class Generic_WSI_Survival_Dataset(Dataset):
         self.patient_strat = patient_strat
         self.train_ids, self.val_ids, self.test_ids  = (None, None, None)
         self.data_dir = None
-
+        #下面的if顺序错了，应该把读取slidedata的放最上面
         if shuffle:
             np.random.seed(seed)
             np.random.shuffle(slide_data)
 
         slide_data = pd.read_csv(csv_path, low_memory=False)
         #slide_data = slide_data.drop(['Unnamed: 0'], axis=1)
+        #提取slide_data文件夹里的index的前12个字符作为case_id列    
         if 'case_id' not in slide_data:
             slide_data.index = slide_data.index.str[:12]
             slide_data['case_id'] = slide_data.index
             slide_data = slide_data.reset_index(drop=True)
-
+        #定义结果标签
         if not label_col:
             label_col = 'survival_months'
         else:
             assert label_col in slide_data.columns
         self.label_col = label_col
-
+        #如果处理的为乳腺癌，那么只用IDC类型的肿瘤样本，下面两行只为BRCA数据集的筛选逻辑
         if "IDC" in slide_data['oncotree_code']: # must be BRCA (and if so, use only IDCs)
             slide_data = slide_data[slide_data['oncotree_code'] == 'IDC']
-
+        #筛选出非重复且未删失的病例（这里认为0为未删失），删失的数据同样重要，有些方法支持使用删失数据
         patients_df = slide_data.drop_duplicates(['case_id']).copy()
         uncensored_df = patients_df[patients_df['censorship'] < 1]
-
+        #对生存时间进行分箱处理
         disc_labels, q_bins = pd.qcut(uncensored_df[label_col], q=n_bins, retbins=True, labels=False)
         q_bins[-1] = slide_data[label_col].max() + eps
         q_bins[0] = slide_data[label_col].min() - eps
-        
+        #把所有病例按照上面的分箱结果进行分箱
         disc_labels, q_bins = pd.cut(patients_df[label_col], bins=q_bins, retbins=True, labels=False, right=False, include_lowest=True)
         patients_df.insert(2, 'label', disc_labels.values.astype(int))
-
+        #构建patient_dict，里面包含每一个case_id对应的slide_id，如果一个病人有多个slide，则都对应起来
         patient_dict = {}
         slide_data = slide_data.set_index('case_id')
         for patient in patients_df['case_id']:
@@ -87,13 +88,13 @@ class Generic_WSI_Survival_Dataset(Dataset):
             else:
                 slide_ids = slide_ids.values
             patient_dict.update({patient:slide_ids})
-
+        
         self.patient_dict = patient_dict
-    
+        #把去重后的patients_df重命名为slide_data
         slide_data = patients_df
         slide_data.reset_index(drop=True, inplace=True)
         slide_data = slide_data.assign(slide_id=slide_data['case_id'])
-
+        #生存分箱编号(分箱编号 i, 删除标志 c)：接0，1，2，3，4，5······，总的来说就是根据生存分箱和删失与否自动生成分类标签
         label_dict = {}
         key_count = 0
         for i in range(len(q_bins)-1):
@@ -101,7 +102,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
                 print('{} : {}'.format((i, c), key_count))
                 label_dict.update({(i, c):key_count})
                 key_count+=1
-
+        #将前面生成的label_dict应用到每个样本上；结果就是disc_label列为生存时间分箱，label列为生存时间与删失状态组合起来的分箱
         self.label_dict = label_dict
         for i in slide_data.index:
             key = slide_data.loc[i, 'label']
@@ -109,24 +110,24 @@ class Generic_WSI_Survival_Dataset(Dataset):
             censorship = slide_data.loc[i, 'censorship']
             key = (key, int(censorship))
             slide_data.at[i, 'label'] = label_dict[key]
-
+        #实例化生存分箱，检查总分箱数量，确保patients_df的每一行都是单独病人不重复，实例化一个两列的表，一列是case_id，一列是总分箱
         self.bins = q_bins
         self.num_classes=len(self.label_dict)
         patients_df = slide_data.drop_duplicates(['case_id'])
         self.patient_data = {'case_id':patients_df['case_id'].values, 'label':patients_df['label'].values}
-
+        #把最后一列移动到最前面，实例化slide_data，定义一个普通变量为metadata，实例化slide_data的前12列为self.metadata
         #new_cols = list(slide_data.columns[-2:]) + list(slide_data.columns[:-2]) ### ICCV
         new_cols = list(slide_data.columns[-1:]) + list(slide_data.columns[:-1])  ### PORPOISE
         slide_data = slide_data[new_cols]
         self.slide_data = slide_data
         metadata = ['disc_label', 'Unnamed: 0', 'case_id', 'label', 'slide_id', 'age', 'site', 'survival_months', 'censorship', 'is_female', 'oncotree_code', 'train']
         self.metadata = slide_data.columns[:12]
-        
+        #循环slide_data中所有的非self.metadata列，判断其是否符合预设的命名规则，不符合的将被打印出来
         for col in slide_data.drop(self.metadata, axis=1).columns:
             if not pd.Series(col).str.contains('|_cnv|_rnaseq|_rna|_mut')[0]:
                 print(col)
         #pdb.set_trace()
-
+        #确保self.metadata与metadata的顺序内容等是一样的，把运行脚本传入的mode参数实例化为self.mode
         assert self.metadata.equals(pd.Index(metadata))
         self.mode = mode
         self.cls_ids_prep()
@@ -134,10 +135,11 @@ class Generic_WSI_Survival_Dataset(Dataset):
         ### ICCV discrepancies
         # For BLCA, TPTEP1_rnaseq was accidentally appended to the metadata
         #pdb.set_trace()
-
+        #打印数据摘要信息
         if print_info:
             self.summarize()
-
+        #如果运行脚本传入了apply_sig store_true参数，那么就实例化./datasets_csv_sig/signatures.csv文件
+        #注意如果想使用apply_sig store_true参数要创建一个对应的./datasets_csv_sig/signatures.csv目录  
         ### Signatures
         self.apply_sig = apply_sig
         if self.apply_sig:
