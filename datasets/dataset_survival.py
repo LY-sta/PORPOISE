@@ -150,7 +150,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
         if print_info:
             self.summarize()
 
-
+    #为不同的分箱结果创建对应的索引，比如分箱为1的病人序号都为哪些
     def cls_ids_prep(self):
         r"""
 
@@ -163,14 +163,14 @@ class Generic_WSI_Survival_Dataset(Dataset):
         for i in range(self.num_classes):
             self.slide_cls_ids[i] = np.where(self.slide_data['label'] == i)[0]
 
-
+    #提取所有唯一病人ID
     def patient_data_prep(self):
         r"""
         
         """
         patients = np.unique(np.array(self.slide_data['case_id'])) # get unique patients
         patient_labels = []
-        
+        #遍历所有病人，保存病人ID与总分箱结果便于后续使用
         for p in patients:
             locations = self.slide_data[self.slide_data['case_id'] == p].index.tolist()
             assert len(locations) > 0
@@ -179,7 +179,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
         
         self.patient_data = {'case_id':patients, 'label':np.array(patient_labels)}
 
-
+    #处理标签列的预处理函数
     @staticmethod
     def df_prep(data, n_bins, ignore, label_col):
         r"""
@@ -191,26 +191,27 @@ class Generic_WSI_Survival_Dataset(Dataset):
         data.reset_index(drop=True, inplace=True)
         disc_labels, bins = pd.cut(data[label_col], bins=n_bins)
         return data, bins
-
+    #定义长度函数，根据需求返回病人或slides的数量
     def __len__(self):
         if self.patient_strat:
             return len(self.patient_data['case_id'])
         else:
             return len(self.slide_data)
-
+    #定义一个名为 summarize 的类方法，作用是打印出当前数据集的关键信息和统计数据
     def summarize(self):
-        print("label column: {}".format(self.label_col))
-        print("label dictionary: {}".format(self.label_dict))
-        print("number of classes: {}".format(self.num_classes))
-        print("slide-level counts: ", '\n', self.slide_data['label'].value_counts(sort = False))
-        for i in range(self.num_classes):
+        print("label column: {}".format(self.label_col))#输出当前使用的标签列的名字
+        print("label dictionary: {}".format(self.label_dict))#打印标签字典，即将标签值映射为内部编号的映射表
+        print("number of classes: {}".format(self.num_classes))#输出类别的总数，也就是任务中有多少个不同的分类标签
+        print("slide-level counts: ", '\n', self.slide_data['label'].value_counts(sort = False))#统计并打印所有切片（slide）级别的标签分布情况
+        for i in range(self.num_classes):#这个循环依次打印每个类别在病人级别和切片级别的样本数量
             print('Patient-LVL; Number of samples registered in class %d: %d' % (i, self.patient_cls_ids[i].shape[0]))
             print('Slide-LVL; Number of samples registered in class %d: %d' % (i, self.slide_cls_ids[i].shape[0]))
 
-
+    #定义一个函数，使其能从一个包含所有划分信息的字典 all_splits 中取出指定子集（如 'train'、'val'、'test'）
+    #并在当前数据中筛选出对应的 slide，构造新的数据子集对象
     def get_split_from_df(self, all_splits: dict, split_key: str='train', scaler=None):
-        split = all_splits[split_key]
-        split = split.dropna().reset_index(drop=True)
+        split = all_splits[split_key]#从 all_splits 中取出对应 split_key 的那一部分切片 ID 列表或序列
+        split = split.dropna().reset_index(drop=True)#移除na值，并重建移除na值之后的表的索引
 
         if len(split) > 0:
             mask = self.slide_data['slide_id'].isin(split.tolist())
@@ -221,7 +222,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
         
         return split
 
-
+    #调用刚刚定义的函数提取对应的数据集
     def return_splits(self, from_id: bool=True, csv_path: str=None):
         if from_id:
             raise NotImplementedError
@@ -233,6 +234,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
             test_split = None #self.get_split_from_df(all_splits=all_splits, split_key='test')
 
             ### --> Normalizing Data
+            #归一化前面得到的子集
             print("****** Normalizing Data ******")
             scalers = train_split.get_scaler()
             train_split.apply_scaler(scalers=scalers)
@@ -241,7 +243,7 @@ class Generic_WSI_Survival_Dataset(Dataset):
             ### <--
         return train_split, val_split#, test_split
 
-
+    #定义根据索引返回对应信息的函数
     def get_list(self, ids):
         return self.slide_data['slide_id'][ids]
 
@@ -254,14 +256,14 @@ class Generic_WSI_Survival_Dataset(Dataset):
     def __getitem__(self, idx):
         return None
 
-
+#定义一个复杂类函数，并且使其运行时传入的参数可以同步传入到上面定义的Generic_WSI_Survival_Dataset中
 class Generic_MIL_Survival_Dataset(Generic_WSI_Survival_Dataset):
     def __init__(self, data_dir, mode: str='omic', **kwargs):
         super(Generic_MIL_Survival_Dataset, self).__init__(**kwargs)
         self.data_dir = data_dir
         self.mode = mode
-        self.use_h5 = False
-
+        self.use_h5 = False  #默认不使用.h5格式的文件
+    #定义一个函数，把toggle 赋值给 self.use_h5判断是否用.h5文件
     def load_from_h5(self, toggle):
         self.use_h5 = toggle
 
@@ -271,15 +273,16 @@ class Generic_MIL_Survival_Dataset(Generic_WSI_Survival_Dataset):
         event_time = torch.Tensor([self.slide_data[self.label_col][idx]])
         c = torch.Tensor([self.slide_data['censorship'][idx]])
         slide_ids = self.patient_dict[case_id]
-
+        #判断特征数据目录self.data_dir为字符串还是字典，并对应的加载
         if type(self.data_dir) == dict:
             source = self.slide_data['oncotree_code'][idx]
             data_dir = self.data_dir[source]
         else:
             data_dir = self.data_dir
-        
+        #判断使用.h5还是.pt（这里.pt文件进入下一步）
         if not self.use_h5:
             if self.data_dir:
+                 #按病人加载多个对应病人的 slide 特征并拼接返回
                 if self.mode == 'path':
                     path_features = []
                     for slide_id in slide_ids:
@@ -288,7 +291,7 @@ class Generic_MIL_Survival_Dataset(Generic_WSI_Survival_Dataset):
                         path_features.append(wsi_bag)
                     path_features = torch.cat(path_features, dim=0)
                     return (path_features, torch.zeros((1,1)), label, event_time, c)
-
+                #相较于 'path' 模式多处理了聚类 ID和基因组特征
                 elif self.mode == 'cluster':
                     path_features = []
                     cluster_ids = []
@@ -301,11 +304,11 @@ class Generic_MIL_Survival_Dataset(Generic_WSI_Survival_Dataset):
                     cluster_ids = torch.Tensor(cluster_ids)
                     genomic_features = torch.tensor(self.genomic_features.iloc[idx])
                     return (path_features, cluster_ids, genomic_features, label, event_time, c)
-
+                #只使用 基因组学特征（omics data） 来进行建模
                 elif self.mode == 'omic':
                     genomic_features = torch.tensor(self.genomic_features.iloc[idx])
                     return (torch.zeros((1,1)), genomic_features.unsqueeze(dim=0), label, event_time, c)
-
+                #病理图片特征+基因组学联合建模
                 elif self.mode == 'pathomic':
                     path_features = []
                     for slide_id in slide_ids:
@@ -315,13 +318,13 @@ class Generic_MIL_Survival_Dataset(Generic_WSI_Survival_Dataset):
                     path_features = torch.cat(path_features, dim=0)
                     genomic_features = torch.tensor(self.genomic_features.iloc[idx])
                     return (path_features, genomic_features.unsqueeze(dim=0), label, event_time, c)
-
+                #直接加载已经拼接好的病人及的病理图片特征，来加速
                 elif self.mode == 'pathomic_fast':
                     casefeat_path = os.path.join(data_dir, f'split_{self.split_id}_case_pt', f'{case_id}.pt')
                     path_features = torch.load(casefeat_path)
                     genomic_features = torch.tensor(self.genomic_features.iloc[idx])
                     return (path_features, genomic_features.unsqueeze(dim=0), label, event_time, c)
-
+                #使用 co-attention（协同注意力）机制 来联合处理病理图像特征和多组组学（omics）特征时数据的加载
                 elif self.mode == 'coattn':
                     path_features = []
                     for slide_id in slide_ids:
