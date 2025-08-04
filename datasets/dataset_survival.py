@@ -362,37 +362,45 @@ class Generic_Split(Generic_MIL_Survival_Dataset):
             self.slide_cls_ids[i] = np.where(self.slide_data['label'] == i)[0]
 
         ### --> Initializing genomic features in Generic Split
+        #提取非self.metadata列
         self.genomic_features = self.slide_data.drop(self.metadata, axis=1)
         self.signatures = signatures
-
+        #在 'cluster' 模式下加载聚类ID
         if mode == 'cluster':
             with open(os.path.join(data_dir, 'fast_cluster_ids.pkl'), 'rb') as handle:
                 self.fname2ids = pickle.load(handle)
-
+        #定义交集函数
         def series_intersection(s1, s2):
             return pd.Series(list(set(s1) & set(s2)))
 
         if self.signatures is not None:
             self.omic_names = []
+            #遍历每一列
             for col in self.signatures.columns:
+                #获取唯一非空值
                 omic = self.signatures[col].dropna().unique()
+                #把唯一非空值后面分别拼接'_mut', '_cnv', '_rnaseq'
                 omic = np.concatenate([omic+mode for mode in ['_mut', '_cnv', '_rnaseq']])
+                #取交集
                 omic = sorted(series_intersection(omic, self.genomic_features.columns))
                 self.omic_names.append(omic)
             self.omic_sizes = [len(omic) for omic in self.omic_names]
+        #打印omics 特征表维度，第一个为样本数，第二个为omic 特征数
         print("Shape", self.genomic_features.shape)
         ### <--
-
+    #定义函数，结果为返回数据的行数（样本数）
     def __len__(self):
         return len(self.slide_data)
 
     ### --> Getting StandardScaler of self.genomic_features
+    #对基因组特征 self.genomic_features 进行标准化（即 z-score 标准化），得出每一列特征的均值 μ；每一列特征的标准差 σ
     def get_scaler(self):
         scaler_omic = StandardScaler().fit(self.genomic_features)
         return (scaler_omic,)
     ### <--
 
     ### --> Applying StandardScaler to self.genomic_features
+    #使用训练集的均值与标准差来标准化特征，对当前数据进行标准化
     def apply_scaler(self, scalers: tuple=None):
         transformed = pd.DataFrame(scalers[0].transform(self.genomic_features))
         transformed.columns = self.genomic_features.columns
